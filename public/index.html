@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TextRank — Real-Time News Summarizer</title>
+fetch
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Fraunces:ital,wght@0,300;0,700;0,900;1,300;1,700&display=swap" rel="stylesheet">
+<!-- D3.js for graph visualization -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+
+<style>
+  :root {
+    --bg: #0a0a08;
+    --surface: #111110;
+    --surface2: #1a1a18;
+    --border: #2a2a26;
+    --accent: #c8f060;
+    --accent2: #f0c060;
+    --accent3: #60c8f0;
+    --accent4: #f060a8;
+    --text: #e8e8e0;
+    --muted: #6a6a60;
+    --node: #c8f060;
+    --edge: #2a4a10;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 0 3rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(10,10,8,0.92);
+    backdrop-filter: blur(12px);
+  }
+
+  .logo { display: flex; align-items: baseline; gap: 0.5rem; }
+  .logo-mark { font-family: 'Fraunces', serif; font-weight: 900; font-size: 1.4rem; color: var(--accent); letter-spacing: -0.03em; }
+  .logo-sub { font-size: 0.65rem; color: var(--muted); letter-spacing: 0.15em; text-transform: uppercase; }
+
+  .nav-pills { display: flex; gap: 0.25rem; }
+  .pill { font-size: 0.7rem; padding: 0.3rem 0.8rem; border-radius: 2px; border: 1px solid transparent; color: var(--muted); cursor: pointer; transition: all 0.2s; background: none; font-family: 'DM Mono', monospace; text-decoration: none; }
+  .pill:hover, .pill.active { border-color: var(--border); color: var(--text); }
+
+  .hero { padding: 5rem 3rem 4rem; border-bottom: 1px solid var(--border); position: relative; overflow: hidden; }
+  .hero-bg { position: absolute; inset: 0; opacity: 0.04; background-image: radial-gradient(circle, var(--accent) 1px, transparent 1px); background-size: 40px 40px; }
+  .hero-tag { font-size: 0.65rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent); margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.6rem; }
+  .hero-tag::before { content: ''; display: inline-block; width: 24px; height: 1px; background: var(--accent); }
+  .hero-title { font-family: 'Fraunces', serif; font-size: clamp(2.5rem, 6vw, 5.5rem); font-weight: 900; line-height: 0.95; letter-spacing: -0.03em; margin-bottom: 2rem; max-width: 900px; }
+  .hero-title em { font-style: italic; font-weight: 300; color: var(--accent); }
+  .hero-desc { font-size: 0.8rem; color: var(--muted); line-height: 1.8; max-width: 480px; letter-spacing: 0.02em; }
+
+  .section-label { font-size: 0.6rem; letter-spacing: 0.25em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 1rem; margin-bottom: 2rem; }
+  .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  #demo { padding: 4rem 3rem; border-bottom: 1px solid var(--border); }
+
+  .demo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5px; background: var(--border); border: 1px solid var(--border); }
+  .demo-pane { background: var(--surface); padding: 2rem; }
+
+  .pane-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
+  .pane-title { font-size: 0.65rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); }
+  .pane-status { font-size: 0.6rem; color: var(--muted); }
+
+  textarea { width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text); font-family: 'DM Mono', monospace; font-size: 0.75rem; line-height: 1.8; padding: 1.25rem; resize: none; height: 220px; outline: none; transition: border-color 0.2s; letter-spacing: 0.01em; }
+  textarea:focus { border-color: var(--accent); }
+  textarea::placeholder { color: var(--muted); }
+
+  /* ── MODEL SELECTOR ── */
+  .model-selector { margin-top: 1.25rem; }
+  .control-label { font-size: 0.6rem; letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.5rem; display: block; }
+
+  .model-tabs { display: flex; gap: 2px; background: var(--border); padding: 2px; margin-bottom: 0; }
+  .model-tab {
+    flex: 1; padding: 0.45rem 0.5rem; font-family: 'DM Mono', monospace; font-size: 0.62rem;
+    letter-spacing: 0.08em; text-transform: uppercase; border: none; background: transparent;
+    color: var(--muted); cursor: pointer; transition: all 0.2s; text-align: center;
+  }
+  .model-tab:hover { color: var(--text); background: var(--surface2); }
+  .model-tab.active { background: var(--surface); color: var(--accent); }
+
+  .model-badges { display: flex; gap: 0.5rem; margin-top: 0.6rem; flex-wrap: wrap; }
+  .badge { font-size: 0.55rem; padding: 0.2rem 0.6rem; border: 1px solid var(--border); color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+  .badge.green { border-color: #2a4a10; color: #6aaa30; }
+  .badge.blue  { border-color: #10304a; color: #30aadd; }
+  .badge.gold  { border-color: #4a3a10; color: #ddaa30; }
+  .badge.pink  { border-color: #4a1030; color: #dd3090; }
+
+  /* BERT key input */
+  .bert-key-row { display: flex; gap: 0.5rem; margin-top: 0.75rem; align-items: center; }
+  .bert-key-input { flex: 1; background: var(--surface2); border: 1px solid var(--border); color: var(--text); font-family: 'DM Mono', monospace; font-size: 0.68rem; padding: 0.5rem 0.75rem; outline: none; }
+  .bert-key-input:focus { border-color: var(--accent4); }
+  .bert-key-input::placeholder { color: var(--muted); }
+  .bert-key-label { font-size: 0.55rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; }
+
+  .controls-row { display: flex; align-items: center; gap: 1rem; margin-top: 1.25rem; }
+  .control-group { display: flex; flex-direction: column; gap: 0.4rem; flex: 1; }
+  .control-row { display: flex; align-items: center; gap: 0.75rem; }
+
+  input[type="range"] { flex: 1; -webkit-appearance: none; height: 2px; background: var(--border); outline: none; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; background: var(--accent); cursor: pointer; }
+  .range-val { font-size: 0.7rem; color: var(--accent); width: 1.5rem; text-align: right; }
+
+  .btn-run { background: var(--accent); color: var(--bg); border: none; font-family: 'DM Mono', monospace; font-size: 0.7rem; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; padding: 0.75rem 2rem; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+  .btn-run:hover { background: #d8ff70; transform: translateY(-1px); }
+  .btn-run:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  .output-area { background: var(--surface2); border: 1px solid var(--border); padding: 1.25rem; height: 220px; overflow-y: auto; font-size: 0.75rem; line-height: 1.9; letter-spacing: 0.01em; position: relative; }
+  .output-placeholder { color: var(--muted); display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 0.75rem; }
+  .output-placeholder svg { opacity: 0.3; }
+  .output-text { display: none; animation: fadeIn 0.4s ease; }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  .output-meta { margin-top: 1.25rem; display: flex; gap: 1.5rem; flex-wrap: wrap; }
+  .meta-stat { display: flex; flex-direction: column; gap: 0.25rem; }
+  .meta-val { font-size: 1.4rem; font-family: 'Fraunces', serif; font-weight: 700; color: var(--accent); line-height: 1; }
+  .meta-key { font-size: 0.6rem; letter-spacing: 0.15em; text-transform: uppercase; color: var(--muted); }
+  .meta-val.model-val { color: var(--accent2); font-size: 1rem; }
+
+  .loader { display: none; align-items: center; gap: 0.75rem; color: var(--muted); font-size: 0.7rem; letter-spacing: 0.1em; height: 100%; justify-content: center; flex-direction: column; }
+  .loader-dots { display: flex; gap: 0.4rem; }
+  .loader-dot { width: 6px; height: 6px; background: var(--accent); border-radius: 50%; animation: pulse 1.2s ease-in-out infinite; }
+  .loader-dot:nth-child(2) { animation-delay: 0.2s; }
+  .loader-dot:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes pulse { 0%, 100% { opacity: 0.2; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1); } }
+
+  /* ── ROUGE PANEL ── */
+  #rouge-panel { padding: 3rem 3rem; border-bottom: 1px solid var(--border); }
+  .rouge-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5px; background: var(--border); border: 1px solid var(--border); }
+  .rouge-pane { background: var(--surface); padding: 2rem; }
+  .rouge-scores { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5px; background: var(--border); margin-top: 1.5rem; }
+  .rouge-score-card { background: var(--surface2); padding: 1.25rem; text-align: center; }
+  .rouge-metric-name { font-size: 0.6rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.75rem; }
+  .rouge-big { font-family: 'Fraunces', serif; font-size: 2.2rem; font-weight: 700; line-height: 1; color: var(--accent2); }
+  .rouge-sub { font-size: 0.6rem; color: var(--muted); margin-top: 0.5rem; display: flex; justify-content: center; gap: 1rem; }
+  .rouge-sub span { display: flex; flex-direction: column; gap: 0.1rem; }
+  .rouge-sub .lbl { font-size: 0.5rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+  .rouge-placeholder { color: var(--muted); font-size: 0.7rem; text-align: center; padding: 2rem; border: 1px dashed var(--border); }
+
+  /* ── GRAPH SECTION ── */
+  #graph-section { padding: 4rem 3rem; border-bottom: 1px solid var(--border); }
+  .graph-wrap { background: var(--surface); border: 1px solid var(--border); padding: 1.5rem; position: relative; min-height: 420px; overflow: hidden; }
+  .graph-empty { display: flex; align-items: center; justify-content: center; height: 380px; color: var(--muted); font-size: 0.7rem; letter-spacing: 0.1em; flex-direction: column; gap: 0.75rem; }
+  #d3Graph { width: 100%; height: 400px; display: block; overflow: hidden; }
+  .graph-legend { margin-top: 1rem; display: flex; gap: 1.5rem; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.6rem; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .legend-line { width: 16px; height: 1px; }
+
+  /* ── HOW IT WORKS ── */
+  #how-it-works { padding: 4rem 3rem; border-bottom: 1px solid var(--border); }
+  .algo-grid { display: grid; grid-template-columns: 1fr 400px; gap: 4rem; align-items: start; }
+  .step-list { display: flex; flex-direction: column; gap: 0; }
+  .step-item { display: grid; grid-template-columns: 40px 1fr; gap: 1.5rem; padding: 1.75rem 0; border-bottom: 1px solid var(--border); }
+  .step-item:last-child { border-bottom: none; }
+  .step-num { font-family: 'Fraunces', serif; font-size: 0.7rem; font-weight: 300; color: var(--accent); padding-top: 0.15rem; letter-spacing: 0.05em; }
+  .step-title { font-size: 0.8rem; font-weight: 500; letter-spacing: 0.05em; margin-bottom: 0.5rem; color: var(--text); }
+  .step-desc { font-size: 0.7rem; color: var(--muted); line-height: 1.8; }
+  .step-code { margin-top: 0.75rem; background: var(--surface2); border-left: 2px solid var(--accent); padding: 0.6rem 0.9rem; font-size: 0.65rem; color: var(--accent); letter-spacing: 0.02em; }
+
+  /* Demo graph canvas (in How It Works section) */
+  .graph-container { position: sticky; top: 80px; background: var(--surface); border: 1px solid var(--border); padding: 1.5rem; }
+  .graph-title { font-size: 0.6rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-bottom: 1rem; }
+  canvas#graphCanvas { display: block; width: 100%; }
+
+  footer { padding: 2rem 3rem; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .footer-credits { font-size: 0.65rem; color: var(--muted); line-height: 1.8; }
+  .footer-credits strong { color: var(--text); }
+  .footer-tag { font-size: 0.6rem; color: var(--muted); letter-spacing: 0.15em; }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .example-chips { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.75rem; }
+  .chip { font-size: 0.6rem; padding: 0.25rem 0.7rem; border: 1px solid var(--border); color: var(--muted); cursor: pointer; transition: all 0.2s; letter-spacing: 0.05em; background: none; font-family: 'DM Mono', monospace; }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+
+  .error-msg { color: #f06060; font-size: 0.7rem; padding: 0.75rem; border: 1px solid #3a1010; background: #1a0a0a; margin-top: 0.75rem; display: none; white-space: pre-wrap; }
+
+  /* ── FILE UPLOAD ZONE ── */
+  .upload-zone {
+    margin-top: 0.75rem;
+    border: 1.5px dashed var(--border);
+    border-radius: 2px;
+    padding: 0.9rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface2);
+    position: relative;
+  }
+  .upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(200,240,96,0.04);
+  }
+  .upload-zone input[type="file"] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .upload-icon {
+    flex-shrink: 0;
+    width: 28px; height: 28px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted);
+  }
+  .upload-label { font-size: 0.65rem; color: var(--muted); line-height: 1.6; }
+  .upload-label strong { color: var(--text); font-weight: 500; }
+  .upload-status {
+    margin-top: 0.5rem;
+    font-size: 0.65rem;
+    color: var(--muted);
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .upload-status.visible  { display: flex; }
+  .upload-status.ok   { color: #6aaa30; }
+  .upload-status.err  { color: #f06060; }
+  .upload-spinner {
+    width: 10px; height: 10px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Tooltip for graph nodes */
+  .graph-tooltip { position: absolute; background: var(--surface); border: 1px solid var(--border); padding: 0.5rem 0.75rem; font-size: 0.65rem; color: var(--text); pointer-events: none; max-width: 240px; line-height: 1.6; z-index: 50; display: none; }
+
+  /* ── GRAPH ZOOM CONTROLS ── */
+  .graph-controls {
+    position: absolute;
+    top: 1rem; right: 1rem;
+    display: none;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 20;
+  }
+  .graph-controls.visible { display: flex; }
+  .graph-btn {
+    width: 28px; height: 28px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+    font-family: 'DM Mono', monospace;
+  }
+  .graph-btn:hover { background: var(--surface); border-color: var(--accent); color: var(--accent); }
+
+  @media (max-width: 980px) {
+    header { padding: 0 1.25rem; }
+    .hero, #demo, #rouge-panel, #graph-section, #how-it-works, footer { padding-left: 1.25rem; padding-right: 1.25rem; }
+    .demo-grid, .rouge-grid { grid-template-columns: 1fr; }
+    .algo-grid { grid-template-columns: 1fr; gap: 2rem; }
+    .graph-container { position: relative; top: 0; }
+    .model-tab { font-size: 0.55rem; padding: 0.4rem 0.3rem; }
+  }
+</style>
+</head>
+
+<body>
+<header>
+  <div class="logo">
+    <span class="logo-mark">TR/</span>
+    <span class="logo-sub">TextRank Summarizer</span>
+  </div>
+  <nav class="nav-pills">
+    <a class="pill active" href="#demo">Demo</a>
+    <a class="pill" href="#rouge-panel">ROUGE Eval</a>
+    <a class="pill" href="#graph-section">Graph</a>
+    <a class="pill" href="#how-it-works">Algorithm</a>
+  </nav>
+</header>
+
+<section class="hero">
+  <div class="hero-bg"></div>
+  <p class="hero-tag">NLP Research · Graph-Based Ranking</p>
+  <h1 class="hero-title">Real-Time<br><em>News</em><br>Summarization</h1>
+  <p class="hero-desc">
+    An extractive text summarization engine powered by <strong>TextRank</strong>, <strong>LexRank</strong>,
+    <strong>TF-IDF Baseline</strong>, and <strong>BERT</strong> — with live ROUGE evaluation and
+    sentence similarity graph visualization. Built on research by Jadhav & Bahirwade, PCCOE Pune.
+  </p>
+</section>
+
+<!-- ─── DEMO ─── -->
+<section id="demo">
+  <div class="section-label">01 — Interactive Demo</div>
+
+  <div class="demo-grid">
+    <div class="demo-pane">
+      <div class="pane-header">
+        <span class="pane-title">Input Article</span>
+        <span class="pane-status" id="wordCount">0 words</span>
+      </div>
+
+      <textarea id="inputText" placeholder="Paste a news article here...
+
+The system will extract the most important sentences using your chosen model. Try any article — politics, tech, science, sports."></textarea>
+
+      <div class="example-chips">
+        <button class="chip" onclick="loadExample('politics')">Politics</button>
+        <button class="chip" onclick="loadExample('tech')">Technology</button>
+        <button class="chip" onclick="loadExample('science')">Science</button>
+      </div>
+
+      <!-- FILE UPLOAD ZONE -->
+      <div class="upload-zone" id="uploadZone"
+           ondragover="handleDragOver(event)"
+           ondragleave="handleDragLeave(event)"
+           ondrop="handleDrop(event)">
+        <input type="file" id="fileInput" accept=".txt,.pdf,.docx"
+               onchange="handleFileSelect(event)" />
+        <div class="upload-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <div class="upload-label">
+          <strong>Upload article file</strong> — drag &amp; drop or click to browse<br>
+          Supported: .txt &nbsp;·&nbsp; .pdf &nbsp;·&nbsp; .docx &nbsp;(max 10 MB)
+        </div>
+      </div>
+      <div class="upload-status" id="uploadStatus">
+        <div class="upload-spinner" id="uploadSpinner" style="display:none;"></div>
+        <span id="uploadStatusText"></span>
+      </div>
+
+      <!-- MODEL SELECTOR -->
+      <div class="model-selector">
+        <span class="control-label">Summarization Model</span>
+        <div class="model-tabs" id="modelTabs">
+          <button class="model-tab active" data-model="textrank" onclick="selectModel(this)">TextRank</button>
+          <button class="model-tab" data-model="tfidf" onclick="selectModel(this)">TF-IDF</button>
+          <button class="model-tab" data-model="lexrank" onclick="selectModel(this)">LexRank</button>
+          <button class="model-tab" data-model="bert" onclick="selectModel(this)">BERT</button>
+        </div>
+        <div class="model-badges" id="modelBadges">
+          <span class="badge green">Graph-based</span>
+          <span class="badge green">PageRank</span>
+          <span class="badge green">Unsupervised</span>
+        </div>
+        <!-- BERT key input — hidden unless BERT selected -->
+        <div class="bert-key-row" id="bertKeyRow" style="display:none;">
+          <span class="bert-key-label">HF Key</span>
+          <input type="password" class="bert-key-input" id="hfApiKey" placeholder="hf_xxxxxxxxxxxxxxxxxxxxxxxx (optional for free models)" />
+        </div>
+      </div>
+
+      <div class="controls-row">
+        <div class="control-group">
+          <span class="control-label">Summary Length</span>
+          <div class="control-row">
+            <input type="range" id="summaryLen" min="1" max="5" value="3" />
+            <span class="range-val" id="lenVal">3</span>
+          </div>
+        </div>
+        <button class="btn-run" id="runBtn" onclick="runSummarize()">▶ Summarize</button>
+      </div>
+
+      <div class="error-msg" id="errorMsg"></div>
+    </div>
+
+    <div class="demo-pane">
+      <div class="pane-header">
+        <span class="pane-title">Generated Summary</span>
+        <span class="pane-status" id="outStatus">awaiting input</span>
+      </div>
+
+      <div class="output-area" id="outputArea">
+        <div class="output-placeholder" id="placeholder">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+            <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+            <path d="M7 8h10M7 12h10M7 16h6"></path>
+          </svg>
+          <span style="font-size:0.65rem;letter-spacing:0.1em;">Summary will appear here</span>
+        </div>
+        <div class="loader" id="loader">
+          <div class="loader-dots">
+            <div class="loader-dot"></div>
+            <div class="loader-dot"></div>
+            <div class="loader-dot"></div>
+          </div>
+          <span id="loaderText">Ranking sentences...</span>
+        </div>
+        <div class="output-text" id="outputText"></div>
+      </div>
+
+      <div class="output-meta" id="outputMeta" style="display:none;">
+        <div class="meta-stat">
+          <span class="meta-val" id="metaSentences">—</span>
+          <span class="meta-key">Sentences Selected</span>
+        </div>
+        <div class="meta-stat">
+          <span class="meta-val" id="metaReduction">—</span>
+          <span class="meta-key">Size Reduction</span>
+        </div>
+        <div class="meta-stat">
+          <span class="meta-val" id="metaWords">—</span>
+          <span class="meta-key">Output Words</span>
+        </div>
+        <div class="meta-stat">
+          <span class="meta-val model-val" id="metaModel">—</span>
+          <span class="meta-key">Model Used</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── ROUGE EVALUATION ─── -->
+<section id="rouge-panel">
+  <div class="section-label">02 — ROUGE Evaluation</div>
+
+  <div class="rouge-grid">
+    <div class="rouge-pane">
+      <div class="pane-header">
+        <span class="pane-title">Reference Summary</span>
+        <span class="pane-status">human-authored ground truth</span>
+      </div>
+      <textarea id="refSummary" style="height:160px;" placeholder="Paste a reference (human-written) summary here to evaluate your generated summary against ROUGE metrics.
+
+ROUGE scores will be computed automatically after summarization."></textarea>
+      <div style="margin-top:1rem;">
+        <button class="btn-run" style="font-size:0.62rem;padding:0.6rem 1.25rem;" onclick="computeRougeStandalone()">Evaluate ROUGE</button>
+        <span style="font-size:0.6rem;color:var(--muted);margin-left:1rem;">Compare last generated summary vs reference</span>
+      </div>
+    </div>
+
+    <div class="rouge-pane">
+      <div class="pane-header">
+        <span class="pane-title">ROUGE Scores</span>
+        <span class="pane-status" id="rougeStatus">not yet evaluated</span>
+      </div>
+
+      <div id="rougePlaceholder" class="rouge-placeholder">
+        Run a summarization with a reference summary, or paste both and click Evaluate ROUGE.
+      </div>
+
+      <div id="rougeScores" style="display:none;">
+        <div class="rouge-scores">
+          <div class="rouge-score-card">
+            <div class="rouge-metric-name">ROUGE-1<br><span style="font-size:0.5rem;color:var(--muted);">Unigram Overlap</span></div>
+            <div class="rouge-big" id="r1f">—</div>
+            <div class="rouge-sub">
+              <span><span class="lbl">P</span><span id="r1p">—</span></span>
+              <span><span class="lbl">R</span><span id="r1r">—</span></span>
+              <span><span class="lbl">F1</span><span id="r1f2">—</span></span>
+            </div>
+          </div>
+          <div class="rouge-score-card">
+            <div class="rouge-metric-name">ROUGE-2<br><span style="font-size:0.5rem;color:var(--muted);">Bigram Overlap</span></div>
+            <div class="rouge-big" id="r2f">—</div>
+            <div class="rouge-sub">
+              <span><span class="lbl">P</span><span id="r2p">—</span></span>
+              <span><span class="lbl">R</span><span id="r2r">—</span></span>
+              <span><span class="lbl">F1</span><span id="r2f2">—</span></span>
+            </div>
+          </div>
+          <div class="rouge-score-card">
+            <div class="rouge-metric-name">ROUGE-L<br><span style="font-size:0.5rem;color:var(--muted);">LCS Similarity</span></div>
+            <div class="rouge-big" id="rLf">—</div>
+            <div class="rouge-sub">
+              <span><span class="lbl">P</span><span id="rLp">—</span></span>
+              <span><span class="lbl">R</span><span id="rLr">—</span></span>
+              <span><span class="lbl">F1</span><span id="rLf2">—</span></span>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:1rem;font-size:0.6rem;color:var(--muted);line-height:1.8;">
+          Paper benchmarks — TextRank: R1=0.69 · R2=0.53 · RL=0.62 &nbsp;|&nbsp; TF-IDF: R1=0.61 · R2=0.46 · RL=0.55
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── GRAPH VISUALIZATION ─── -->
+<section id="graph-section">
+  <div class="section-label">03 — Sentence Similarity Graph</div>
+  <p style="font-size:0.7rem;color:var(--muted);margin-bottom:2rem;max-width:600px;line-height:1.8;">
+    Live D3 force-directed graph — sentences are <strong style="color:var(--text);">nodes</strong>, cosine similarity scores are <strong style="color:var(--text);">edges</strong>. Node size and color reflect TextRank/LexRank scores. Selected sentences are highlighted in <span style="color:var(--accent);">green</span>.
+  </p>
+
+  <div class="graph-wrap" id="graphWrap">
+    <div class="graph-empty" id="graphEmpty">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
+        <circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/>
+        <line x1="12" y1="7" x2="5" y2="17"/><line x1="12" y1="7" x2="19" y2="17"/>
+      </svg>
+      <span>Run a summarization to generate the similarity graph</span>
+    </div>
+    <!-- Zoom / pan controls -->
+    <div class="graph-controls" id="graphControls">
+      <button class="graph-btn" id="zoomIn"  title="Zoom in">+</button>
+      <button class="graph-btn" id="zoomOut" title="Zoom out">−</button>
+      <button class="graph-btn" id="zoomReset" title="Reset view" style="font-size:0.6rem;letter-spacing:0.05em;">FIT</button>
+    </div>
+    <svg id="d3Graph" style="display:none;"></svg>
+    <div class="graph-tooltip" id="graphTooltip"></div>
+    <div class="graph-legend" id="graphLegend" style="display:none;">
+      <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div>Selected sentence</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#4a7a20"></div>Unselected</div>
+      <div class="legend-item"><div class="legend-line" style="background:rgba(200,240,96,0.5)"></div>Strong similarity</div>
+      <div class="legend-item"><div class="legend-line" style="background:rgba(200,240,96,0.15)"></div>Weak similarity</div>
+    </div>
+  </div>
+</section>
+
+<!-- ─── HOW IT WORKS ─── -->
+<section id="how-it-works">
+  <div class="section-label">04 — How Each Model Works</div>
+
+  <div class="algo-grid">
+    <div class="step-list">
+      <div class="step-item">
+        <span class="step-num">01</span>
+        <div>
+          <div class="step-title">Text Preprocessing (Shared Pipeline)</div>
+          <div class="step-desc">All models share the same preprocessing: tokenization, stopword removal, lowercasing, and punctuation cleaning to reduce noise before analysis.</div>
+          <div class="step-code">tokenize → remove stopwords → lowercase → clean punctuation</div>
+        </div>
+      </div>
+      <div class="step-item">
+        <span class="step-num">02</span>
+        <div>
+          <div class="step-title">TF-IDF Baseline</div>
+          <div class="step-desc">Scores each sentence by summing all TF-IDF term weights. The highest-scoring sentences are selected directly — no graph construction needed. Fast, simple, interpretable.</div>
+          <div class="step-code">score(s) = Σ TF(t,s) × IDF(t,D)  →  top-N by score</div>
+        </div>
+      </div>
+      <div class="step-item">
+        <span class="step-num">03</span>
+        <div>
+          <div class="step-title">TextRank (Graph + PageRank)</div>
+          <div class="step-desc">Builds a sentence similarity graph using cosine similarity. Applies the PageRank-inspired TextRank algorithm to iteratively compute sentence importance until convergence.</div>
+          <div class="step-code">WS(Vᵢ) = (1-d) + d × Σ [ w_ji / Σ w_jk × WS(Vⱼ) ]</div>
+        </div>
+      </div>
+      <div class="step-item">
+        <span class="step-num">04</span>
+        <div>
+          <div class="step-title">LexRank (Degree-Normalized PageRank)</div>
+          <div class="step-desc">Like TextRank, but normalizes the transition matrix by node degree before applying PageRank — treating sentences with many connections more like hubs, reducing bias toward densely-connected sentences.</div>
+          <div class="step-code">P(i→j) = cosine(i,j) / degree(i)  →  PageRank on P</div>
+        </div>
+      </div>
+      <div class="step-item">
+        <span class="step-num">05</span>
+        <div>
+          <div class="step-title">BERT Summarization (via HuggingFace)</div>
+          <div class="step-desc">Uses the facebook/bart-large-cnn model via HuggingFace Inference API for transformer-based abstractive summarization. Requires a free HuggingFace API key. Represents the paper's future scope direction.</div>
+          <div class="step-code">BART encoder-decoder → beam search → abstractive summary</div>
+        </div>
+      </div>
+      <div class="step-item">
+        <span class="step-num">06</span>
+        <div>
+          <div class="step-title">ROUGE Evaluation</div>
+          <div class="step-desc">ROUGE-1 (unigram overlap), ROUGE-2 (bigram overlap), and ROUGE-L (longest common subsequence) are computed against your reference summary. Precision, recall, and F1 are all shown.</div>
+          <div class="step-code">ROUGE-N = Σ overlap_ngrams / Σ ref_ngrams</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="graph-container">
+      <div class="graph-title">Sentence Similarity Graph — Decorative Preview</div>
+      <canvas id="graphCanvas" width="340" height="320"></canvas>
+      <div class="graph-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div>High rank</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#4a7a20"></div>Low rank</div>
+        <div class="legend-item"><div class="legend-line" style="background:var(--accent)"></div>Strong similarity</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-credits">
+    <strong>Parth Jadhav</strong> & <strong>Suraj Bahirwade</strong> · Information Technology<br />
+    Pimpri Chinchwad College of Engineering, Pune, India
+  </div>
+  <div class="footer-tag">TextRank · LexRank · TF-IDF · BERT · ROUGE</div>
+</footer>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// FILE UPLOAD — drag-and-drop + click-to-browse
+// Sends file to POST /api/upload, populates textarea with extracted text
+// ─────────────────────────────────────────────────────────────────────────────
+
+function setUploadStatus(state, message) {
+  // state: "loading" | "ok" | "err" | "hidden"
+  const wrap    = document.getElementById("uploadStatus");
+  const spinner = document.getElementById("uploadSpinner");
+  const text    = document.getElementById("uploadStatusText");
+
+  wrap.className = "upload-status";
+  spinner.style.display = "none";
+
+  if (state === "hidden") { return; }
+
+  wrap.classList.add("visible");
+  if (state === "loading") { spinner.style.display = "block"; }
+  else { wrap.classList.add(state); }
+  text.textContent = message;
+}
+
+async function uploadAndExtract(file) {
+  if (!file) return;
+
+  const allowed = [".txt", ".pdf", ".docx"];
+  const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+  if (!allowed.includes(ext)) {
+    setUploadStatus("err", `Unsupported format: ${ext}. Please use .txt, .pdf, or .docx`);
+    return;
+  }
+
+  setUploadStatus("loading", `Extracting text from "${file.name}"…`);
+
+  const formData = new FormData();
+  formData.append("article", file);
+
+  try {
+    const resp = await fetch("/api/upload", {
+      method: "POST",
+      body: formData
+    });
+
+    const data = await resp.json().catch(() => ({}));
+
+    if (!resp.ok) {
+      setUploadStatus("err", data.error || `Upload failed (HTTP ${resp.status})`);
+      return;
+    }
+
+    // Populate textarea with extracted text
+    const ta = document.getElementById("inputText");
+    ta.value = data.text || "";
+    document.getElementById("wordCount").textContent = `${data.wordCount || 0} words`;
+
+    setUploadStatus("ok", `✓ Loaded "${file.name}" — ${data.wordCount} words extracted`);
+
+    // Auto-scroll to show the populated textarea
+    ta.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  } catch (err) {
+    setUploadStatus("err", `Upload error: ${err.message}. Make sure the server is running.`);
+  }
+}
+
+// Click-to-browse
+function handleFileSelect(event) {
+  const file = event.target.files[0];
+  if (file) uploadAndExtract(file);
+  // Reset the input so the same file can be re-uploaded if needed
+  event.target.value = "";
+}
+
+// Drag-and-drop
+function handleDragOver(event) {
+  event.preventDefault();
+  document.getElementById("uploadZone").classList.add("drag-over");
+}
+function handleDragLeave(event) {
+  document.getElementById("uploadZone").classList.remove("drag-over");
+}
+function handleDrop(event) {
+  event.preventDefault();
+  document.getElementById("uploadZone").classList.remove("drag-over");
+  const file = event.dataTransfer.files[0];
+  if (file) uploadAndExtract(file);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────────────────────
+let currentModel = "textrank";
+let lastSummary = "";
+let lastGraphData = null;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODEL SELECTOR
+// ─────────────────────────────────────────────────────────────────────────────
+const MODEL_META = {
+  textrank: { badges: [["Graph-based","green"],["PageRank","green"],["Unsupervised","green"]], loader: "Running TextRank PageRank..." },
+  tfidf:    { badges: [["TF-IDF Baseline","blue"],["No Graph","blue"],["Fast","blue"]], loader: "Scoring by TF-IDF weight..." },
+  lexrank:  { badges: [["Graph-based","gold"],["Degree-Normalized","gold"],["LexRank","gold"]], loader: "Running LexRank PageRank..." },
+  bert:     { badges: [["BERT / BART","pink"],["Transformer","pink"],["HuggingFace API","pink"]], loader: "Querying HuggingFace BART..." },
+};
+
+function selectModel(btn) {
+  document.querySelectorAll(".model-tab").forEach(t => t.classList.remove("active"));
+  btn.classList.add("active");
+  currentModel = btn.dataset.model;
+
+  const meta = MODEL_META[currentModel];
+  const badges = document.getElementById("modelBadges");
+  badges.innerHTML = meta.badges.map(([label, cls]) =>
+    `<span class="badge ${cls}">${label}</span>`).join("");
+
+  const bertRow = document.getElementById("bertKeyRow");
+  bertRow.style.display = currentModel === "bert" ? "flex" : "none";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EXAMPLE TEXTS
+// ─────────────────────────────────────────────────────────────────────────────
+const examples = {
+  politics: `World leaders gathered in Geneva this week for a landmark summit on climate policy, with representatives from over 140 nations attending. The summit opened with a sobering speech from the UN Secretary-General, who warned that current pledges are insufficient to limit warming to 1.5 degrees Celsius. Major economies including the United States, China, and the European Union announced new emission-reduction targets, though environmental groups criticized the commitments as lacking firm timelines. Negotiations became particularly tense over the issue of climate finance, with developing nations demanding greater support from wealthier countries to fund their green transitions. A draft agreement circulated on the second day included a provision to triple renewable energy capacity by 2030, which received broad support. However, oil-producing nations pushed back on language calling for a rapid phase-out of fossil fuels. The summit is expected to conclude with a final communiqué that will be closely scrutinized for binding commitments. Observers noted that success at this summit could define the credibility of global climate diplomacy for years to come.`,
+  tech: `Researchers at a leading technology institute have unveiled a new artificial intelligence system capable of predicting protein structures with unprecedented accuracy, potentially transforming drug discovery. The system, trained on billions of molecular interactions, can generate structural predictions in minutes compared to weeks required by traditional lab methods. Early tests show the AI achieving accuracy rates above 92 percent across a diverse set of proteins, surpassing previous benchmarks. Pharmaceutical companies have already expressed interest in licensing the technology to accelerate development pipelines for treatments targeting cancer, Alzheimer's disease, and antibiotic-resistant infections. The team published their findings in a peer-reviewed journal, making the core model weights publicly available to accelerate scientific progress. Critics raised concerns about potential misuse of the technology for designing harmful biological agents, prompting calls for responsible access protocols. The researchers emphasized they collaborated closely with biosecurity experts throughout development. The breakthrough is seen as a significant step toward AI-driven personalized medicine, where treatments could eventually be tailored to individual patients' genetic profiles.`,
+  science: `Astronomers announced the detection of water vapor in the atmosphere of a distant exoplanet located within the habitable zone of its star, marking a significant milestone in the search for potentially life-supporting worlds. The discovery was made using the James Webb Space Telescope, which analyzed light filtered through the planet's atmosphere during a transit event. The exoplanet, designated K2-18c, orbits a red dwarf star approximately 120 light-years from Earth. Scientists detected not only water but also traces of carbon dioxide and methane, a combination that some researchers interpret as a potential biosignature when found together. However, the lead investigator cautioned that numerous non-biological processes could produce such chemical signatures and that further study is required. The findings were published in a major astrophysics journal and have generated considerable debate within the scientific community. Future observations with next-generation space telescopes are planned to confirm the results and search for additional indicators of habitability. The discovery renews optimism about the possibility of finding extraterrestrial life within the coming decades.`
+};
+
+function loadExample(type) {
+  const ta = document.getElementById("inputText");
+  ta.value = examples[type] || "";
+  document.getElementById("wordCount").textContent = `${ta.value.trim().split(/\s+/).filter(Boolean).length} words`;
+}
+
+document.getElementById("inputText").addEventListener("input", () => {
+  const v = document.getElementById("inputText").value.trim();
+  document.getElementById("wordCount").textContent = `${v.split(/\s+/).filter(Boolean).length} words`;
+});
+document.getElementById("summaryLen").addEventListener("input", function() {
+  document.getElementById("lenVal").textContent = this.value;
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BERT via HuggingFace Inference API
+// ─────────────────────────────────────────────────────────────────────────────
+async function summarizeWithBERT(text, numSentences) {
+  const key = document.getElementById("hfApiKey").value.trim();
+  // Truncate to ~1000 words for API limits
+  const truncated = text.split(/\s+/).slice(0, 800).join(" ");
+
+  const headers = { "Content-Type": "application/json" };
+  if (key) headers["Authorization"] = `Bearer ${key}`;
+
+  const maxLen = Math.min(150, numSentences * 50);
+  const minLen = Math.max(30, numSentences * 20);
+
+  const resp = await fetch(
+    "https://api-inference.huggingface.co/models/facebook/bart-large-cnn",
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        inputs: truncated,
+        parameters: { max_length: maxLen, min_length: minLen, do_sample: false }
+      })
+    }
+  );
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    if (resp.status === 503) throw new Error("HuggingFace model is loading. Try again in ~20 seconds.");
+    if (resp.status === 401) throw new Error("HuggingFace API key invalid or required. Get a free key at huggingface.co");
+    throw new Error(err.error || `HuggingFace API error (${resp.status})`);
+  }
+
+  const data = await resp.json();
+  const summary = data?.[0]?.summary_text || data?.summary_text || "";
+  if (!summary) throw new Error("BERT returned an empty summary.");
+  return summary;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN SUMMARIZE
+// ─────────────────────────────────────────────────────────────────────────────
+async function runSummarize() {
+  const text = document.getElementById("inputText").value.trim();
+  if (!text || text.length < 50) { showError("Please enter a longer article."); return; }
+
+  hideError();
+  setLoading(true);
+
+  const numSentences = Number(document.getElementById("summaryLen").value);
+  const refSummary = document.getElementById("refSummary").value.trim();
+  const loaderMsg = MODEL_META[currentModel]?.loader || "Processing...";
+  document.getElementById("loaderText").textContent = loaderMsg;
+
+  try {
+    let summary, rouge = null, graphData = null;
+
+    if (currentModel === "bert") {
+      summary = await summarizeWithBERT(text, numSentences);
+      // BERT is abstractive — no graph data
+    } else {
+      const response = await fetch("/api/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, numSentences, model: currentModel, referenceSummary: refSummary || undefined })
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
+
+      summary = data.summary || "";
+      rouge = data.rouge || null;
+      graphData = data.graphData || null;
+
+      if (!summary) throw new Error("No summary returned");
+    }
+
+    lastSummary = summary;
+    lastGraphData = graphData;
+
+    // Stats
+    const inputWords = text.split(/\s+/).filter(Boolean).length;
+    const outputWords = summary.split(/\s+/).filter(Boolean).length;
+    const reduction = inputWords ? Math.round((1 - outputWords / inputWords) * 100) : 0;
+
+    document.getElementById("metaSentences").textContent = String(numSentences);
+    document.getElementById("metaReduction").textContent = `${reduction}%`;
+    document.getElementById("metaWords").textContent = String(outputWords);
+    document.getElementById("metaModel").textContent = currentModel.toUpperCase();
+
+    const safe = summary.replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+    document.getElementById("outputText").innerHTML = safe;
+    document.getElementById("outStatus").textContent = "complete";
+    document.getElementById("outputMeta").style.display = "flex";
+
+    // ROUGE display
+    if (rouge) showRouge(rouge);
+
+    // Graph
+    if (graphData) renderD3Graph(graphData);
+
+  } catch (err) {
+    showError(String(err).slice(0, 500));
+    console.error(err);
+  } finally {
+    setLoading(false);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUGE STANDALONE
+// ─────────────────────────────────────────────────────────────────────────────
+async function computeRougeStandalone() {
+  const ref = document.getElementById("refSummary").value.trim();
+  if (!lastSummary) { alert("Run a summarization first."); return; }
+  if (!ref) { alert("Paste a reference summary in the ROUGE panel."); return; }
+
+  try {
+    const resp = await fetch("http://localhost:3000/api/rouge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ candidate: lastSummary, reference: ref })
+    });
+    const data = await resp.json();
+    if (data.rouge) showRouge(data.rouge);
+  } catch (e) {
+    alert("Could not compute ROUGE: " + e.message);
+  }
+}
+
+function showRouge(rouge) {
+  document.getElementById("rougePlaceholder").style.display = "none";
+  document.getElementById("rougeScores").style.display = "block";
+  document.getElementById("rougeStatus").textContent = "evaluated";
+
+  const fmt = v => typeof v === "number" ? v.toFixed(3) : "—";
+
+  document.getElementById("r1f").textContent  = fmt(rouge.rouge1?.f);
+  document.getElementById("r1p").textContent  = fmt(rouge.rouge1?.p);
+  document.getElementById("r1r").textContent  = fmt(rouge.rouge1?.r);
+  document.getElementById("r1f2").textContent = fmt(rouge.rouge1?.f);
+
+  document.getElementById("r2f").textContent  = fmt(rouge.rouge2?.f);
+  document.getElementById("r2p").textContent  = fmt(rouge.rouge2?.p);
+  document.getElementById("r2r").textContent  = fmt(rouge.rouge2?.r);
+  document.getElementById("r2f2").textContent = fmt(rouge.rouge2?.f);
+
+  document.getElementById("rLf").textContent  = fmt(rouge.rougeL?.f);
+  document.getElementById("rLp").textContent  = fmt(rouge.rougeL?.p);
+  document.getElementById("rLr").textContent  = fmt(rouge.rougeL?.r);
+  document.getElementById("rLf2").textContent = fmt(rouge.rougeL?.f);
+
+  document.getElementById("rouge-panel").scrollIntoView({ behavior: "smooth" });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// D3 FORCE-DIRECTED GRAPH — fixed: bounded nodes, zoom/pan, resize-safe
+// ─────────────────────────────────────────────────────────────────────────────
+let d3Zoom = null;       // shared zoom behaviour so controls can call it
+let d3Svg  = null;       // shared svg selection
+let d3SimRef = null;     // ref to simulation so resize can recentre
+
+function renderD3Graph(graphData) {
+  const { nodes, edges } = graphData;
+  if (!nodes || nodes.length === 0) return;
+
+  // ── Dimensions ──────────────────────────────────────────────────────────
+  const container = document.getElementById("graphWrap");
+  // Subtract the 1.5rem*2 padding of .graph-wrap (≈48px) and a small buffer
+  const W = Math.max(300, container.clientWidth  - 56);
+  const H = 420;
+  const PAD = 36; // keep nodes this far from every edge
+
+  document.getElementById("graphEmpty").style.display   = "none";
+  document.getElementById("graphControls").classList.add("visible");
+  document.getElementById("graphLegend").style.display  = "flex";
+
+  // ── SVG setup ────────────────────────────────────────────────────────────
+  const svgEl = document.getElementById("d3Graph");
+  svgEl.style.display = "block";
+  svgEl.setAttribute("width",   W);
+  svgEl.setAttribute("height",  H);
+  svgEl.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svgEl.innerHTML = "";
+
+  d3Svg = d3.select("#d3Graph");
+
+  // ── Zoom behaviour ───────────────────────────────────────────────────────
+  // All graph content lives inside a <g id="zoomGroup"> so zoom/pan only
+  // transforms that group — the SVG boundary never changes.
+  d3Zoom = d3.zoom()
+    .scaleExtent([0.3, 4])
+    .on("zoom", (event) => {
+      d3Svg.select("#zoomGroup").attr("transform", event.transform);
+    });
+
+  d3Svg.call(d3Zoom);
+
+  const g = d3Svg.append("g").attr("id", "zoomGroup");
+
+  // Arrow defs
+  d3Svg.append("defs").append("marker")
+    .attr("id", "arrow")
+    .attr("viewBox", "0 -5 10 10")
+    .attr("refX", 15).attr("refY", 0)
+    .attr("markerWidth", 4).attr("markerHeight", 4)
+    .attr("orient", "auto")
+    .append("path").attr("d", "M0,-5L10,0L0,5")
+    .attr("fill", "rgba(200,240,96,0.4)");
+
+  // ── Simulation ───────────────────────────────────────────────────────────
+  // forceCenter keeps the cluster centred.
+  // forceCollide prevents node overlap.
+  // forceBoundingBox (custom) clamps positions inside [PAD, W-PAD] × [PAD, H-PAD].
+  const nodeRadius = d => 12 + (d.normScore || 0) * 12;
+
+  d3SimRef = d3.forceSimulation(nodes)
+    .force("link",      d3.forceLink(edges)
+                          .id(d => d.id)
+                          .distance(d => Math.max(60, 130 - (d.weight || 0) * 60))
+                          .strength(d => Math.min(1, (d.weight || 0) * 0.9)))
+    .force("charge",    d3.forceManyBody().strength(-200).distanceMax(300))
+    .force("center",    d3.forceCenter(W / 2, H / 2).strength(0.08))
+    .force("collision", d3.forceCollide().radius(d => nodeRadius(d) + 10).strength(0.9))
+    .alphaDecay(0.025)
+    .velocityDecay(0.4);
+
+  // Bounding-box force: applied on every tick to clamp x/y
+  d3SimRef.force("bounds", () => {
+    for (const node of nodes) {
+      const r = nodeRadius(node) + 4;
+      node.x = Math.max(PAD + r, Math.min(W - PAD - r, node.x || W / 2));
+      node.y = Math.max(PAD + r, Math.min(H - PAD - r, node.y || H / 2));
+      // Also clamp velocity so nodes can't tunnel through the wall on fast frames
+      if (Math.abs(node.vx) > 8) node.vx *= 0.5;
+      if (Math.abs(node.vy) > 8) node.vy *= 0.5;
+    }
+  });
+
+  // Warm up briefly so nodes start in a reasonable layout, not all at origin
+  d3SimRef.tick(80);
+
+  // ── Edges ────────────────────────────────────────────────────────────────
+  const link = g.append("g").selectAll("line")
+    .data(edges)
+    .join("line")
+    .attr("stroke",       d => `rgba(200,240,96,${Math.max(0.08, (d.weight || 0) * 0.55)})`)
+    .attr("stroke-width", d => Math.max(0.5, (d.weight || 0) * 2.5));
+
+  // ── Node groups ──────────────────────────────────────────────────────────
+  const node = g.append("g").selectAll("g")
+    .data(nodes)
+    .join("g")
+    .call(d3.drag()
+      .on("start", (e, d) => {
+        if (!e.active) d3SimRef.alphaTarget(0.25).restart();
+        d.fx = d.x; d.fy = d.y;
+      })
+      .on("drag", (e, d) => {
+        // Clamp drag position to bounds so the user can't drag nodes off-screen
+        const r = nodeRadius(d) + 4;
+        d.fx = Math.max(PAD + r, Math.min(W - PAD - r, e.x));
+        d.fy = Math.max(PAD + r, Math.min(H - PAD - r, e.y));
+      })
+      .on("end", (e, d) => {
+        if (!e.active) d3SimRef.alphaTarget(0);
+        d.fx = null; d.fy = null;
+      })
+    );
+
+  // Glow halo
+  node.append("circle")
+    .attr("r",    d => nodeRadius(d) * 1.9)
+    .attr("fill", d => d.selected ? "rgba(200,240,96,0.09)" : "rgba(74,122,32,0.05)");
+
+  // Main fill circle
+  node.append("circle")
+    .attr("r",    d => nodeRadius(d))
+    .attr("fill", d => {
+      const ns = d.normScore || 0;
+      return d.selected
+        ? `rgb(${Math.round(74 + ns * 126)},${Math.round(74 + ns * 166)},${Math.round(32 + ns * 64)})`
+        : "rgb(40,60,20)";
+    })
+    .attr("stroke",       d => d.selected ? "rgba(200,240,96,0.85)" : "rgba(200,240,96,0.2)")
+    .attr("stroke-width", d => d.selected ? 1.5 : 0.5);
+
+  // Label
+  node.append("text")
+    .text(d => d.label)
+    .attr("text-anchor",      "middle")
+    .attr("dominant-baseline","middle")
+    .attr("font-family",      "'DM Mono', monospace")
+    .attr("font-size",        "9px")
+    .attr("font-weight",      "bold")
+    .attr("fill",             d => d.selected ? "#0a0a08" : "#c8f060")
+    .attr("pointer-events",   "none");
+
+  // Tooltip
+  const tooltip = document.getElementById("graphTooltip");
+  node
+    .on("mouseover", (e, d) => {
+      tooltip.style.display = "block";
+      tooltip.style.left    = (e.offsetX + 14) + "px";
+      tooltip.style.top     = (e.offsetY -  8) + "px";
+      tooltip.innerHTML     = `<strong>${d.label}</strong>${d.selected ? " ✓" : ""}<br>Score: ${(d.score || 0).toFixed(4)}<br><em style="color:var(--muted)">${d.preview || ""}</em>`;
+    })
+    .on("mousemove", e => {
+      tooltip.style.left = (e.offsetX + 14) + "px";
+      tooltip.style.top  = (e.offsetY -  8) + "px";
+    })
+    .on("mouseout", () => { tooltip.style.display = "none"; });
+
+  // ── Tick handler ─────────────────────────────────────────────────────────
+  d3SimRef.on("tick", () => {
+    link
+      .attr("x1", d => d.source.x)
+      .attr("y1", d => d.source.y)
+      .attr("x2", d => d.target.x)
+      .attr("y2", d => d.target.y);
+
+    node.attr("transform", d => `translate(${d.x},${d.y})`);
+  });
+
+  // ── Zoom control buttons ─────────────────────────────────────────────────
+  document.getElementById("zoomIn").onclick = () =>
+    d3Svg.transition().duration(250).call(d3Zoom.scaleBy, 1.4);
+
+  document.getElementById("zoomOut").onclick = () =>
+    d3Svg.transition().duration(250).call(d3Zoom.scaleBy, 0.72);
+
+  document.getElementById("zoomReset").onclick = () =>
+    d3Svg.transition().duration(350).call(d3Zoom.transform, d3.zoomIdentity);
+
+  // ── Resize handler ───────────────────────────────────────────────────────
+  // Debounced — only recalculates if the container width actually changed
+  let prevW = W;
+  const resizeObserver = new ResizeObserver(() => {
+    const newW = Math.max(300, container.clientWidth - 56);
+    if (Math.abs(newW - prevW) < 10) return;
+    prevW = newW;
+
+    svgEl.setAttribute("width",   newW);
+    svgEl.setAttribute("viewBox", `0 0 ${newW} ${H}`);
+
+    d3SimRef
+      .force("center", d3.forceCenter(newW / 2, H / 2).strength(0.08))
+      .force("bounds", () => {
+        for (const nd of nodes) {
+          const r = nodeRadius(nd) + 4;
+          nd.x = Math.max(PAD + r, Math.min(newW - PAD - r, nd.x));
+          nd.y = Math.max(PAD + r, Math.min(H    - PAD - r, nd.y));
+        }
+      })
+      .alpha(0.3)
+      .restart();
+  });
+  resizeObserver.observe(container);
+
+  document.getElementById("graph-section").scrollIntoView({ behavior: "smooth" });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LOADING STATE
+// ─────────────────────────────────────────────────────────────────────────────
+function setLoading(on) {
+  const btn = document.getElementById("runBtn");
+  const loader = document.getElementById("loader");
+  const placeholder = document.getElementById("placeholder");
+  const output = document.getElementById("outputText");
+
+  btn.disabled = on;
+  btn.textContent = on ? "⏳ Processing..." : "▶ Summarize";
+
+  if (on) {
+    placeholder.style.display = "none";
+    output.style.display = "none";
+    loader.style.display = "flex";
+    document.getElementById("outputMeta").style.display = "none";
+    document.getElementById("outStatus").textContent = "processing…";
+  } else {
+    loader.style.display = "none";
+    output.style.display = "block";
+    btn.textContent = "▶ Summarize";
+  }
+}
+
+function showError(msg) {
+  const el = document.getElementById("errorMsg");
+  el.textContent = msg; el.style.display = "block";
+}
+function hideError() {
+  const el = document.getElementById("errorMsg");
+  el.style.display = "none"; el.textContent = "";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DECORATIVE CANVAS GRAPH (How It Works section — existing animation)
+// ─────────────────────────────────────────────────────────────────────────────
+const canvas = document.getElementById("graphCanvas");
+const ctx = canvas.getContext("2d");
+const W = 340, H = 320;
+canvas.width = W; canvas.height = H;
+
+const demoNodes = Array.from({ length: 8 }, (_, i) => ({
+  id: i, x: 60 + Math.random() * 220, y: 50 + Math.random() * 220,
+  vx: (Math.random() - 0.5) * 0.4, vy: (Math.random() - 0.5) * 0.4,
+  rank: Math.random(), label: `S${i + 1}`,
+}));
+demoNodes[0].rank = 0.95; demoNodes[2].rank = 0.78; demoNodes[5].rank = 0.62;
+
+const demoEdges = [];
+for (let i = 0; i < demoNodes.length; i++)
+  for (let j = i + 1; j < demoNodes.length; j++)
+    if (Math.random() > 0.45) demoEdges.push({ a: i, b: j, w: 0.2 + Math.random() * 0.8 });
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function drawGraph(t) {
+  ctx.clearRect(0, 0, W, H);
+  demoNodes.forEach(n => {
+    n.x += n.vx; n.y += n.vy;
+    if (n.x < 30 || n.x > W - 30) n.vx *= -1;
+    if (n.y < 30 || n.y > H - 30) n.vy *= -1;
+    demoNodes.forEach(m => {
+      if (m === n) return;
+      const dx = n.x - m.x, dy = n.y - m.y;
+      const d = Math.sqrt(dx*dx + dy*dy);
+      if (d < 80) { n.vx += (dx/d)*0.05; n.vy += (dy/d)*0.05; }
+    });
+    n.vx *= 0.98; n.vy *= 0.98;
+  });
+  demoEdges.forEach(e => {
+    const a = demoNodes[e.a], b = demoNodes[e.b];
+    const pulse = 0.5 + 0.5 * Math.sin(t * 0.002 + e.a + e.b);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+    ctx.strokeStyle = `rgba(200, 240, 96, ${e.w * 0.3 + pulse * 0.15})`;
+    ctx.lineWidth = e.w * 1.5; ctx.stroke();
+  });
+  demoNodes.forEach(n => {
+    const r = 8 + n.rank * 12;
+    const pulse = 1 + 0.08 * Math.sin(t * 0.003 + n.id);
+    const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, r * 2.5);
+    grd.addColorStop(0, `rgba(200,240,96,${n.rank * 0.3})`);
+    grd.addColorStop(1, "rgba(200,240,96,0)");
+    ctx.beginPath(); ctx.arc(n.x, n.y, r * 2.5 * pulse, 0, Math.PI * 2);
+    ctx.fillStyle = grd; ctx.fill();
+    ctx.beginPath(); ctx.arc(n.x, n.y, r * pulse, 0, Math.PI * 2);
+    const g = Math.round(lerp(74, 240, n.rank));
+    ctx.fillStyle = `rgb(${Math.round(lerp(74, 200, n.rank))}, ${g}, ${Math.round(lerp(32, 96, n.rank))})`;
+    ctx.fill(); ctx.strokeStyle = "rgba(200,240,96,0.4)"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = n.rank > 0.6 ? "#0a0a08" : "#c8f060";
+    ctx.font = "bold 9px 'DM Mono', monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(n.label, n.x, n.y);
+  });
+}
+let frame = 0;
+(function animate() { drawGraph(frame++); requestAnimationFrame(animate); })();
+
+// Smooth scroll
+document.querySelectorAll("a[href^='#']").forEach(a => {
+  a.addEventListener("click", e => {
+    e.preventDefault();
+    document.querySelector(a.getAttribute("href")).scrollIntoView({ behavior: "smooth" });
+  });
+});
+</script>
+</body>
+</html>
